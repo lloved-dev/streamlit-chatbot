@@ -1,0 +1,16 @@
+# 虚拟环境（几百 MB，绝不能提交）
+.venv/
+venv/
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 编辑器
+.idea/
+.vscode/
+
+# 日志与临时文件
+*.log
+.DS_Store
