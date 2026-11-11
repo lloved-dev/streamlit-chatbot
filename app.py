@@ -1,80 +1,92 @@
-"""本地聊天机器人 —— Streamlit + Ollama（OpenAI 兼容接口）。
+"""K_ai_D 聊天机器人 —— Streamlit + 本地 Ollama（走 OpenAI 兼容接口）。
 
-启动方式（必须用 streamlit run，直接 python app.py 页面会是空白的）：
+启动（必须用 streamlit run；直接 python app.py 只会得到一片空白）：
     .\\.venv\\Scripts\\Activate.ps1
     streamlit run app.py
 
-前提：本机 Ollama 已启动，且已拉取 qwen2.5:7b 模型。
+前提：本机 Ollama 已启动（127.0.0.1:11434），且已拉取 qwen2.5:7b 模型。
 """
 
 import streamlit as st
 from openai import OpenAI
 
 # 指向本机 Ollama 的 OpenAI 兼容接口。
-# 用这套接口的好处：以后换成云端模型（DeepSeek、通义等）只需改 base_url。
-# api_key 本地服务不校验，写个占位值即可。
+# 好处：以后想换成 DeepSeek、通义等云端模型，只需改 base_url 和 api_key，
+# 下面的调用代码一行都不用动。本地服务不校验 key，填个占位值即可。
 client = OpenAI(base_url="http://127.0.0.1:11434/v1", api_key="ollama")
 
-# Streamlit 每接收一次交互（输入、点按钮）就把整个脚本从头重跑一遍。
-# 普通变量会被重置，只有 session_state 里的数据能跨重跑存活。
-# 注意：它只活在"当前会话"里，浏览器 F5 刷新或关掉标签页就会清空。
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        # system 是"人设"，永远排第一条，不会显示给用户看
-        {"role": "system", "content": "你是一个聊天机器人"}
+
+def im():
+    """返回一份全新的初始对话：人设 + 开场问候。
+
+    每次调用都新建一个列表，所以“首次进入页面”和“点清空对话”拿到的是
+    互不影响的两份数据。若改成模块级常量直接赋值，两处会共用同一个列表对象，
+    之后往 messages 里 append 会把这份“模板”也改掉。
+    """
+    return [
+        # system 是“人设”，必须排第一条。它只发给模型看，不在界面上显示。
+        {"role": "system", "content": "你是一个聊天机器人"},
+        # 开场问候也放进历史里，模型才知道自己说过这句话；
+        # 它会由下面的历史循环渲染出来，所以界面代码里不需要再单独画一次。
+        {"role": "assistant", "content": "您好，我是K_ai_D聊天机器人，有什么可以帮助您的吗！"},
     ]
+
+
+# Streamlit 每接收一次交互（输入、点按钮）就把整个脚本从头重跑一遍。
+# 普通变量每次重跑都会被重置，只有 session_state 里的数据能跨重跑存活。
+# 注意：它只活在“当前浏览器会话”里，F5 刷新或关掉标签页就会清空。
+if "messages" not in st.session_state:
+    st.session_state.messages = im()
 
 st.title("K_ai_D聊天机器人")
 st.caption("本地部署 · 数据不出本机")
 st.divider()
-
-st.chat_message("assistant").write("您好，我是K_ai_D聊天机器人，有什么可以帮助您的吗！")
 
 with st.sidebar:
     st.caption("模型: qwen2.5:7b")
 
     # st.button() 返回 True/False，只有被点击的那一次返回 True，所以要用 if 判断
     if st.button("清空对话"):
-        # 重置成只有 system 的初始状态，再强制重跑一次让界面立刻刷新
-        st.session_state.messages = [
-            {"role": "system", "content": "你是一个聊天机器人"}
-        ]
+        # 重置成一份新的初始对话（含开场问候），再强制重跑一次让界面立刻刷新。
+        # 这里必须重新调用 im()，否则问候语会在清空后消失。
+        st.session_state.messages = im()
         st.rerun()
 
-# 把历史渲染成气泡。
-# [1:] 跳过第一条 system —— 它只给模型看，不该出现在聊天界面上。
+# 渲染历史消息。
+# [1:] 跳过索引 0 的 system —— 它只给模型看，不该出现在聊天界面上。
+# 索引 1 的开场问候也会在这里被画出来。
 for m in st.session_state.messages[1:]:
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
 text = st.chat_input("说点什么")
 if text:
-    # 1) 用户消息先入库，下一轮重跑时由上面的循环负责显示
+    # 1) 用户消息先入库。上面那个历史循环本轮已经跑过了，
+    #    所以紧接着要当场补画一次，否则这句会“慢一拍”才出现。
     st.session_state.messages.append({"role": "user", "content": text})
 
-    # 2) 当场再画一遍：上面的循环在本轮已经跑过了，不画就会"慢一拍"
     with st.chat_message("user"):
         st.markdown(text)
 
-    # 3) 调用模型。messages 传的是整个历史 —— 这就是模型"记得上文"的唯一原因，
-    #    模型本身没有记忆，每次都要把全量对话重新发给它。
+    # 2) 调用模型。传的是整个历史 —— 模型本身没有记忆，
+    #    它能“记得上文”的唯一原因，就是每次都把全量对话重新发一遍。
     with st.spinner("思考中..."):
         try:
             resp = client.chat.completions.create(
                 model="qwen2.5:7b",
                 messages=st.session_state.messages,
             )
-            # 返回值是 OpenAI 格式：choices[0] 是第一个候选答案
+            # 返回是 OpenAI 格式：choices[0] 是第一个候选答案
             回答 = resp.choices[0].message.content
         except Exception as e:
-            # 失败时撤回刚入库的用户消息，避免留下"半条对话"；
-            # 然后终止本次运行，防止拿未定义的 回答 继续往下执行
+            # 失败时把刚入库的用户消息撤回，避免界面留下“半条对话”；
+            # 再终止本次运行，否则下面会用到未定义的 回答 变量。
             st.session_state.messages.pop()
             st.error(f"模型调用失败：{e}")
             st.stop()
 
-    # 4) 模型的回答也要入库，否则它永远不记得自己说过什么，聊几轮就开始重复
+    # 3) 模型的回答同样要入库，否则它不记得自己说过什么，聊几轮就开始重复。
     st.session_state.messages.append({"role": "assistant", "content": 回答})
+
     with st.chat_message("assistant"):
         st.markdown(回答)
-        
