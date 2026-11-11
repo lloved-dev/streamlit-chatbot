@@ -24,8 +24,11 @@ if "messages" not in st.session_state:
         {"role": "system", "content": "你是一个聊天机器人"}
     ]
 
-st.title("我的本地聊天机器人")
+st.title("K_ai_D聊天机器人")
 st.caption("本地部署 · 数据不出本机")
+st.divider()
+
+st.chat_message("assistant").write("您好，我是K_ai_D聊天机器人，有什么可以帮助您的吗！")
 
 with st.sidebar:
     st.caption("模型: qwen2.5:7b")
@@ -74,3 +77,4 @@ if text:
     st.session_state.messages.append({"role": "assistant", "content": 回答})
     with st.chat_message("assistant"):
         st.markdown(回答)
+        
